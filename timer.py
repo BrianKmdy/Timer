@@ -82,7 +82,7 @@ class TimerManager(threading.Thread):
 
 class TimerInterface:
     def __init__(self):
-        sg.theme('DarkBlue3')
+        sg.theme('DarkBlue')
 
         self.window = None
         self.layout = None
@@ -110,10 +110,9 @@ class TimerInterface:
     def open_window(self):
         if not self.window:
             self.text = sg.InputText('')
-            table_data, visible = self.get_table_data()
-            self.table = sg.Table(table_data, headings=['Time(s)', 'Name'], visible=visible, col_widths=[10, 300])
+            self.table = sg.Multiline(default_text='', auto_size_text=True)
             self.layout = [[self.text], [self.table]]
-            self.window = sg.Window('Timers', self.layout, return_keyboard_events=True, size=(350, 30))
+            self.window = sg.Window('Timers', self.layout, return_keyboard_events=True, auto_size_text=True, size=(400, 200))
             print(self.table.Widget)
         else:
             self.window.UnHide()
@@ -126,11 +125,11 @@ class TimerInterface:
             self.layout = None
             self.text = None
 
-    def get_table_data(self):
-        timers = []
+    def update_table(self):
+        self.table.update(value='')
+        timers = ''
         for timer in self.timer_manager.get_timers():
-            timers.append([str(timer['time']), timer['reason']])
-        return (timers if len(timers) > 0 else [['        ', '                                                                 ']]), len(timers) > 0
+            self.table.print('{} {}'.format(str(timer['time']), timer['reason']))
 
     def process_events(self):
         last_time = time.time()
@@ -157,17 +156,11 @@ class TimerInterface:
                     if input:
                         self.timer_manager.set_timer(input)
                     self.text.update(value='')
-                    table_data, visible = self.get_table_data()
-                    self.table.update(values=table_data, visible=visible)
+                    self.update_table()
                 if not event:
                     self.kill_window()
-                elif event != '__TIMEOUT__':
-                    print(event)
                 if time.time() >= last_time + 1:
-                    table_data, visible = self.get_table_data()
-                    self.table.update(values=table_data, visible=visible)
-                    header = self.table.Widget.horizontalHeader()   
-                    header.setSectionResizeMode(1, PySide2.QtWidgets.QHeaderView.ResizeToContents)
+                    self.update_table()
                     last_time = time.time()
 
             menu_item = self.tray.Read(timeout=10)
