@@ -1,16 +1,15 @@
 import ctypes
 import time
-import sys
 import re
 import PySimpleGUIQt as sg
-import sys
 import threading
 import socket
 import traceback
 from PyQt5.QtWidgets import *
 from PyQt5.QtCore import *
 from PyQt5.QtGui import *
-import PySide2
+import math
+import os
 
 HOST = '127.0.0.1'  # Standard loopback interface address (localhost)
 PORT = 65432        # Port to listen on (non-privileged ports are > 1023)
@@ -25,15 +24,14 @@ class TimerManager(threading.Thread):
 
     def run(self):
         while self.alive:
-            time.sleep(1)
+            time.sleep(1.01)
             with self.mutex:
                 for timer in self.timers:
-                    timer['time'] -= 1
-                    if timer['time'] <= 0:
+                    if timer['time'] - time.time() <= 0:
                         ctypes.windll.user32.MessageBoxW(None, timer['reason'], u'Timer', 0x00001000 | 0x00000040)
 
                 old_len = len(self.timers)
-                self.timers = [t for t in self.timers if t['time'] > 0]
+                self.timers = [t for t in self.timers if (t['time'] - time.time()) > 0]
                 if len(self.timers) < old_len:
                     self.timer_expired = True
 
@@ -65,10 +63,10 @@ class TimerManager(threading.Thread):
             if len(entry) > 1:
                 reason = u' '.join(entry[1:])
             else:
-                reason = u'The timer has expired'
+                reason = u'Timer'
 
             with self.mutex:
-                self.timers.append({'time': timer, 'reason': reason})
+                self.timers.append({'time': time.time() + timer, 'reason': reason})
         except Exception as e:
             print('Exception: {}'.format(str(e)))
 
@@ -89,8 +87,12 @@ class TimerInterface:
         self.text = None
         self.table = None
 
-        menu_def = ['BLANK', ['5', '10', '15', '20', '25', '30', '35', '40', '45', '50', '55', '60', 'Open', 'Exit']]  
-        self.tray = sg.SystemTray(menu=menu_def, tooltip='test')
+        self.icon_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'timer.ico')
+        with open(self.icon_path, 'rb') as f:
+            icon_bytes = f.read()
+
+        menu_def = ['BLANK', ['Open', 'Exit']]  
+        self.tray = sg.SystemTray(menu=menu_def, tooltip='Timer', data=icon_bytes)
 
         self.timer_manager = TimerManager()
 
@@ -112,7 +114,7 @@ class TimerInterface:
             self.text = sg.InputText('')
             self.table = sg.Multiline(default_text='', auto_size_text=True)
             self.layout = [[self.text], [self.table]]
-            self.window = sg.Window('Timers', self.layout, return_keyboard_events=True, auto_size_text=True, size=(400, 200))
+            self.window = sg.Window('Timer', self.layout, return_keyboard_events=True, auto_size_text=True, size=(400, 200), icon=self.icon_path)
             print(self.table.Widget)
         else:
             self.window.UnHide()
@@ -129,7 +131,9 @@ class TimerInterface:
         self.table.update(value='')
         timers = ''
         for timer in self.timer_manager.get_timers():
-            self.table.print('{} {}'.format(str(timer['time']), timer['reason']))
+            remaining = math.ceil(timer['time'] - time.time())
+            hours, minutes, seconds = (int(remaining / 3600), int((remaining % 3600) / 60), int(remaining % 60))
+            self.table.print('{:02d}:{:02d}:{:02d} {}'.format(hours, minutes, seconds, timer['reason']))
 
     def process_events(self):
         last_time = time.time()
@@ -149,14 +153,17 @@ class TimerInterface:
                 if event == 'special 16777220':
                     if values[0].lower() == 'exit':
                         break
-                    input = values[0]
-                    if(input[-1] == '-'):
-                        input = input[:-1]
+                    elif values[0].lower() == 'min':
                         self.kill_window()
-                    if input:
-                        self.timer_manager.set_timer(input)
-                    self.text.update(value='')
-                    self.update_table()
+                    else:
+                        input = values[0]
+                        if(input[-1] == '-'):
+                            input = input[:-1]
+                            self.kill_window()
+                        if input:
+                            self.timer_manager.set_timer(input)
+                        self.text.update(value='')
+                        self.update_table()
                 if not event:
                     self.kill_window()
                 if time.time() >= last_time + 1:
@@ -167,7 +174,7 @@ class TimerInterface:
             if menu_item == 'Exit':  
                 break
             elif menu_item == 'Open':  
-                sg.Popup('Menu item chosen', menu_item)
+                self.open_window()
             elif menu_item == '__ACTIVATED__':
                 self.tray.update(tooltip='activated')
                 self.open_window()
